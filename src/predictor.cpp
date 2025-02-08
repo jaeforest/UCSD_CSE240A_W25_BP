@@ -144,7 +144,10 @@ void init_tournament() {
   int i = 0;
 
   for (i = 0; i < lht_entries; i++) {       // for every entry of LHT and BHT 
-    lht_tournament[i] = WN;
+    lht_tournament[i] = WN;                 // initializes to WN or 01          
+  }
+
+  for (i = 0; i < bht_entries; i++) {       // for every entry of LHT and BHT 
     bht_tournament[i] = WN;                 // initializes to WN or 01
   }
 
