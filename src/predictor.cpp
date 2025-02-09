@@ -25,12 +25,25 @@ const char *bpName[4] = {"Static", "Gshare",
                          "Tournament", "Custom"};
 
 // define number of bits required for indexing the BHT here.
-int ghistoryBits = 17; // Number of bits used for Global History (ghr of gshare)
-int pcBits = 14;       // Number of bits used for PC (Tournament)
-int lhtBits = 11;      // Number of bits used for Local History Table (Tournament)
-int phistoryBits = 14; // Number of bits used for Path History (ghr of Tournament)
+
 int bpType;            // Branch Prediction Type
 int verbose;
+
+// gshare
+int ghistoryBits = 17; // Number of bits used for Global History (ghr of gshare)
+
+// tournament
+int pcBits = 13;       // Number of bits used for PC lower bit (Tournament)
+int lhtBits = 15;      // Number of bits used for Local History Table (Tournament)
+int phistoryBits = 14; // Number of bits used for Path History (ghr of Tournament)
+
+// tage
+int tage_pcBits = 14;       // Number of bits used for PC lower bit
+int tage_ghrBits = 16;      
+int t1_bits = 2;
+int t2_bits = 4;
+int t3_bits = 8;
+int t4_bits = 16;
 
 //------------------------------------//
 //      Predictor Data Structures     //
@@ -51,7 +64,11 @@ uint8_t *choice_tournament;
 uint64_t pathHistory;     // same as ghr
 
 // custom
-
+uint8_t *t0_tage;        // bimodal predictor
+uint8_t *t1_tage;        // last 2 branches
+uint8_t *t2_tage;        // last 4 branches
+uint8_t *t3_tage;        // last 8 branches
+uint8_t *t4_tage;        // last 16 branches
 
 //------------------------------------//
 //        Predictor Functions         //
@@ -132,10 +149,10 @@ void cleanup_gshare()
 /***********************************************tournament predictor functions************************************************/
 void init_tournament() {
   // this function initializes BHT and path history register (= ghr) for tournament predictor
-  int lht_entries = 1 << pcBits;                                        // lht_entries = 2^14
-  int bht_entries = 1 << lhtBits;                                       // bht_entries = 2^11
-  lht_tournament = (uint16_t *)malloc(lht_entries * sizeof(uint16_t));  // 2^14 * 2 byte = 32 KB allocated for lht_tournament. In reality, we only use 11 bits for each entry, so 2^14 * 11 = 176 Kbits                                 
-  bht_tournament = (uint8_t *)malloc(bht_entries * sizeof(uint8_t));    // 2^11 * 1 byte = 2 KB allocated for bht_tournament. In reality, we only use 2 bits for each entry, so 2^11 * 2 = 4 Kbits  
+  int lht_entries = 1 << pcBits;                                        // lht_entries = 2^13
+  int bht_entries = 1 << lhtBits;                                       // bht_entries = 2^15
+  lht_tournament = (uint16_t *)malloc(lht_entries * sizeof(uint16_t));  // 2^13 * 2 byte = 16 KB allocated for lht_tournament. In reality, we only use 15 bits for each entry, so 2^13 * 15 = 120 Kbits                                 
+  bht_tournament = (uint8_t *)malloc(bht_entries * sizeof(uint8_t));    // 2^15 * 1 byte = 32 KB allocated for bht_tournament. In reality, we only use 2 bits for each entry, so 2^15 * 2 = 64 Kbits  
 
   int ght_entries = 1 << phistoryBits;                                  // ght_entries = 2^14, both GHT and choice prediction table share the same number of entries
   ght_tournament = (uint8_t *)malloc(ght_entries * sizeof(uint8_t));    // 2^14 * 1 byte = 4 KB allocated for ght_tournament. In reality, we only use 2 bits for each entry, so 2^14 * 2 = 32 Kbits  
@@ -144,7 +161,7 @@ void init_tournament() {
   int i = 0;
 
   for (i = 0; i < lht_entries; i++) {       // for every entry of LHT and BHT 
-    lht_tournament[i] = WN;                 // initializes to WN or 01          
+    lht_tournament[i] = 0;                 // initializes to 0        
   }
 
   for (i = 0; i < bht_entries; i++) {       // for every entry of LHT and BHT 
@@ -160,10 +177,10 @@ void init_tournament() {
 
 uint8_t tournament_predict(uint32_t pc) {
   // this function returns the prediction result by choosing either local or global predictor
-  uint32_t lht_entries = 1 << pcBits;           // lht_entries = 2^14
-  uint32_t bht_entries = 1 << lhtBits;          // bht_entries = 2^11
-  uint32_t lht_index = pc & (lht_entries - 1);  // lht is indexed by lower 14 bits of pc (masked with 14 1s)
-  uint32_t bht_index = lht_tournament[lht_index];  // bht is indexed by lht entry (14 bits)
+  uint32_t lht_entries = 1 << pcBits;           // lht_entries = 2^13
+  uint32_t bht_entries = 1 << lhtBits;          // bht_entries = 2^15
+  uint32_t lht_index = pc & (lht_entries - 1);  // lht is indexed by lower 13 bits of pc (masked with 13 1s)
+  uint32_t bht_index = lht_tournament[lht_index] & (bht_entries - 1);  // bht is indexed by lht entry (15 bits)
 
   uint32_t ght_entries = 1 << phistoryBits;                 // ght_entries = 2^14
   uint32_t ght_index = pathHistory & (ght_entries - 1);     // ght (global history table) is indexed by path history bits (14 bits)
@@ -186,10 +203,10 @@ uint8_t tournament_predict(uint32_t pc) {
 
 void train_tournament(uint32_t pc, uint8_t outcome) {
   // this function updates tables based on the actual outcome
-  uint32_t lht_entries = 1 << pcBits;           // lht_entries = 2^14
-  uint32_t bht_entries = 1 << lhtBits;          // bht_entries = 2^11
-  uint32_t lht_index = pc & (lht_entries - 1);  // lht is indexed by lower 14 bits of pc (masked with 14 1s)
-  uint32_t bht_index = lht_tournament[lht_index];  // bht is indexed by lht entry (14 bits)
+  uint32_t lht_entries = 1 << pcBits;           // lht_entries = 2^13
+  uint32_t bht_entries = 1 << lhtBits;          // bht_entries = 2^15
+  uint32_t lht_index = pc & (lht_entries - 1);  // lht is indexed by lower 14 bits of pc (masked with 13 1s)
+  uint32_t bht_index = lht_tournament[lht_index] & (bht_entries - 1);  // bht is indexed by lht entry (15 bits)
 
   uint32_t ght_entries = 1 << phistoryBits;                 // ght_entries = 2^14
   uint32_t ght_index = pathHistory & (ght_entries - 1);     // ght (global history table) is indexed by path history bits (14 bits)
@@ -242,7 +259,7 @@ void train_tournament(uint32_t pc, uint8_t outcome) {
     case WN:
       choice_tournament[choice_index] = (outcome == TAKEN) ? SN : WT;
       break;
-    case SN:
+    case SN:  
       choice_tournament[choice_index] = (outcome == TAKEN) ? SN : WN;
       break;
     
@@ -254,7 +271,7 @@ void train_tournament(uint32_t pc, uint8_t outcome) {
       choice_tournament[choice_index] = (outcome == TAKEN) ? ST : WT;
       break;
     default:
-      printf("Warning: Undefined state of entry!\n");
+      printf("Warning: Undefined state of entry in choice table!\n");
       break;
   }
 
@@ -272,6 +289,93 @@ void cleanup_tournament()
 
 /*********************************************end of tournament predictor functions**********************************************/
 
+/************************************************* tage predictor functions*****************************************************/
+void init_tage() {
+  //this function initializes tables for tage predictor 
+  int t0_entries = 1 << (tage_pcBits + 4);          // t0_entries = 2^14
+  int t1_entries = 1 << (tage_pcBits + 3);          // t1_entries = 2^13
+  int t2_entries = 1 << (tage_pcBits + 2);          // t2_entries = 2^12
+  int t3_entries = 1 << (tage_pcBits + 1);          // t3_entries = 2^11
+  int t4_entries = 1 << tage_pcBits;                // t4_entries = 2^10
+
+  t0_tage = (uint8_t *)malloc(t0_entries * sizeof(uint8_t));
+  t1_tage = (uint8_t *)malloc(t0_entries * sizeof(uint8_t));
+  t2_tage = (uint8_t *)malloc(t0_entries * sizeof(uint8_t));
+  t3_tage = (uint8_t *)malloc(t0_entries * sizeof(uint8_t));
+  t4_tage = (uint8_t *)malloc(t0_entries * sizeof(uint8_t));
+  
+
+  int i = 0;
+  for (i = 0; i < t0_entries; i++)     // for every entry of BHT
+  {
+    bht_gshare[i] = WN;                 // initializes to WN or 01
+  }
+  ghistory = 0;
+}
+
+uint8_t tage_predict(uint32_t pc) {
+  // this function returns the prediction result by accessing the BHT
+  uint32_t bht_entries = 1 << ghistoryBits;         // bht_entries = 2^17
+  uint32_t pc_lower_bits = pc & (bht_entries - 1);  // pc masking with 17 1s
+  uint32_t ghistory_lower_bits = ghistory & (bht_entries - 1);  // ghistory masking with 17 1s
+  uint32_t index = pc_lower_bits ^ ghistory_lower_bits;         // xoring pc lower bits and ghr lower bits for indexing
+  
+  switch (bht_gshare[index]) {  // looks at the bht entry to decide whether branch should be predicted taken or not taken
+  case WN:
+    return NOTTAKEN;
+  case SN:
+    return NOTTAKEN;
+  case WT:
+    return TAKEN;
+  case ST:
+    return TAKEN;
+  default:
+    printf("Warning: Undefined state of entry in GSHARE BHT!\n");
+    return NOTTAKEN;
+  }
+}
+
+void train_tage(uint32_t pc, uint8_t outcome) {
+  // this function updates the BHT entry based on the actual outcome
+  uint32_t bht_entries = 1 << ghistoryBits;         // bht_entries = 2^17
+  uint32_t pc_lower_bits = pc & (bht_entries - 1);  // pc masking with 17 1s
+  uint32_t ghistory_lower_bits = ghistory & (bht_entries - 1);  // ghistory masking with 17 1s
+  uint32_t index = pc_lower_bits ^ ghistory_lower_bits;         // xoring pc lower bits and ghr lower bits for indexing
+
+  switch (bht_gshare[index]) {
+  case WN:
+    bht_gshare[index] = (outcome == TAKEN) ? WT : SN;
+    break;
+  case SN:
+    bht_gshare[index] = (outcome == TAKEN) ? WN : SN;
+    break;
+  case WT:
+    bht_gshare[index] = (outcome == TAKEN) ? ST : WN;
+    break;
+  case ST:
+    bht_gshare[index] = (outcome == TAKEN) ? ST : WT;
+    break;
+  default:
+    printf("Warning: Undefined state of entry in GSHARE BHT!\n");
+    break;
+  }
+
+  // Update history register
+  ghistory = ((ghistory << 1) | outcome);
+}
+
+void cleanup_tage()
+{
+  free(t0_tage);
+  free(t1_tage);
+  free(t2_tage);
+  free(t3_tage);
+  free(t4_tage);
+}
+
+/*********************************************end of tage predictor functions **********************************************/
+
+
 void init_predictor()
 {
   switch (bpType)
@@ -285,6 +389,7 @@ void init_predictor()
     init_tournament();
     break;
   case CUSTOM:
+    init_tage();
     break;
   default:
     break;
@@ -308,7 +413,7 @@ uint32_t make_prediction(uint32_t pc, uint32_t target, uint32_t direct)
   case TOURNAMENT:
     return tournament_predict(pc);
   case CUSTOM:
-    return NOTTAKEN;
+    return tage_predict(pc);
   default:
     break;
   }
@@ -335,7 +440,7 @@ void train_predictor(uint32_t pc, uint32_t target, uint32_t outcome, uint32_t co
     case TOURNAMENT:
       return train_tournament(pc, outcome);
     case CUSTOM:
-      return;
+      return train_tage(pc, outcome);
     default:
       break;
     }

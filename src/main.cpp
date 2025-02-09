@@ -38,19 +38,19 @@ int handle_option(char *arg)
 {
   if (!strcmp(arg, "--static"))
   {
-    bpType = STATIC;
+    bpType = STATIC;      // STATIC = 0
   }
   else if (!strncmp(arg, "--gshare", 8))
   {
-    bpType = GSHARE;
+    bpType = GSHARE;      // GSHARE = 1
   }
   else if (!strncmp(arg, "--tournament", 12))
   {
-    bpType = TOURNAMENT;
+    bpType = TOURNAMENT;  // TOURNAMENT = 2
   }
   else if (!strncmp(arg, "--custom", 8))
   {
-    bpType = CUSTOM;
+    bpType = CUSTOM;      // CUSTOM = 3
   }
   else if (!strcmp(arg, "--verbose"))
   {
