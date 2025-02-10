@@ -38,12 +38,8 @@ int lhtBits = 15;      // Number of bits used for Local History Table (Tournamen
 int phistoryBits = 14; // Number of bits used for Path History (ghr of Tournament)
 
 // tage
-int tage_pcBits = 14;       // Number of bits used for PC lower bit
-int tage_ghrBits = 16;      
-int t1_bits = 2;
-int t2_bits = 4;
-int t3_bits = 8;
-int t4_bits = 16;
+int table_pcBits[5] = {14, 13, 12, 11, 10};       // Number of bits used for PC lower bit to index each table
+int table_ghrBits[4] = {2, 4, 8, 16};             // Number of bits used for ghr bit to index each table (geometric series)
 
 //------------------------------------//
 //      Predictor Data Structures     //
@@ -61,14 +57,15 @@ uint16_t *lht_tournament;
 uint8_t *bht_tournament;
 uint8_t *ght_tournament;
 uint8_t *choice_tournament;
-uint64_t pathHistory;     // same as ghr
+uint64_t pathHistory;     // same as ghistory (ghr)
 
-// custom
-uint8_t *t0_tage;        // bimodal predictor
-uint8_t *t1_tage;        // last 2 branches
-uint8_t *t2_tage;        // last 4 branches
-uint8_t *t3_tage;        // last 8 branches
-uint8_t *t4_tage;        // last 16 branches
+// custom (tage)
+uint8_t *t0_table;         // bimodal predictor
+uint16_t *t1_table;        // last 2 branches
+uint16_t *t2_table;        // last 4 branches
+uint16_t *t3_table;        // last 8 branches
+uint16_t *t4_table;        // last 16 branches
+uint64_t ghr;              // same as ghistory
 
 //------------------------------------//
 //        Predictor Functions         //
@@ -292,32 +289,46 @@ void cleanup_tournament()
 /************************************************* tage predictor functions*****************************************************/
 void init_tage() {
   //this function initializes tables for tage predictor 
-  int t0_entries = 1 << (tage_pcBits + 4);          // t0_entries = 2^14
-  int t1_entries = 1 << (tage_pcBits + 3);          // t1_entries = 2^13
-  int t2_entries = 1 << (tage_pcBits + 2);          // t2_entries = 2^12
-  int t3_entries = 1 << (tage_pcBits + 1);          // t3_entries = 2^11
-  int t4_entries = 1 << tage_pcBits;                // t4_entries = 2^10
+  int t0_entries = 1 << table_pcBits[0];          // t0_entries = 2^14
+  int t1_entries = 1 << table_pcBits[1];          // t1_entries = 2^13
+  int t2_entries = 1 << table_pcBits[2];          // t2_entries = 2^12
+  int t3_entries = 1 << table_pcBits[3];          // t3_entries = 2^11
+  int t4_entries = 1 << table_pcBits[4];          // t4_entries = 2^10
 
-  t0_tage = (uint8_t *)malloc(t0_entries * sizeof(uint8_t));
-  t1_tage = (uint8_t *)malloc(t0_entries * sizeof(uint8_t));
-  t2_tage = (uint8_t *)malloc(t0_entries * sizeof(uint8_t));
-  t3_tage = (uint8_t *)malloc(t0_entries * sizeof(uint8_t));
-  t4_tage = (uint8_t *)malloc(t0_entries * sizeof(uint8_t));
-  
+  t0_table = (uint8_t *)malloc(t0_entries * sizeof(uint8_t));     // t0_table = 2^14 * 1 byte = 16 KB. In reality, we only use 2 bits for each entry, so 2^14 * 2 = 32 Kbits 
+  t1_table = (uint16_t *)malloc(t1_entries * sizeof(uint16_t));   // t1_table = 2^13 * 2 byte = 16 KB. In reality, we only use 13 bits for each entry, so 2^13 * 13 =  104 Kbits
+  t2_table = (uint16_t *)malloc(t2_entries * sizeof(uint16_t));   // t2_table = 2^12 * 2 byte = 8 KB. In reality, we only use 14 bits for each entry, so 2^12 * 14 = 48 Kbits
+  t3_table = (uint16_t *)malloc(t3_entries * sizeof(uint16_t));   // t3_table = 2^11 * 2 byte = 4 KB. In reality, we only use 15 bits for each entry, so 2^11 * 15 = 30 Kbits
+  t4_table = (uint16_t *)malloc(t4_entries * sizeof(uint16_t));   // t4_table = 2^10 * 2 byte = 2 KB. In reality, we use all 16 bits for each entry, so 2^10 * 16 = 16 Kbits
 
   int i = 0;
-  for (i = 0; i < t0_entries; i++)     // for every entry of BHT
-  {
-    bht_gshare[i] = WN;                 // initializes to WN or 01
+  for (i = 0; i < t0_entries; i++) {    // for every entry of t0 table (bimodal)
+    t0_table[i] = WN;                   // initializes to WN or 01
   }
-  ghistory = 0;
+
+  for (i = 0; i < t1_entries; i++) {      // for every entry of t1 table 
+    t1_table[i] = (1 << 11) | (1 << 10);  // initializes to 011 00000000 00 = (3 counter | 8 tag | 2 useful)
+  }
+
+  for (i = 0; i < t2_entries; i++) {      // for every entry of t1 table
+    t2_table[i] = (1 << 12) | (1 << 11);  // initializes to 011 000000000 00 = (3 counter | 9 tag | 2 useful)
+  }
+
+  for (i = 0; i < t3_entries; i++) {      // for every entry of t1 table
+    t3_table[i] = (1 << 13) | (1 << 12);  // initializes to 011 0000000000 00 = (3 counter | 10 tag | 2 useful)
+  }
+
+  for (i = 0; i < t4_entries; i++) {      // for every entry of t1 table
+    t4_table[i] = (1 << 14) | (1 << 13);  // initializes to 011 00000000000 00 = (3 counter | 11 tag | 3 useful)
+  }
+  ghr = 0;
 }
 
 uint8_t tage_predict(uint32_t pc) {
-  // this function returns the prediction result by accessing the BHT
-  uint32_t bht_entries = 1 << ghistoryBits;         // bht_entries = 2^17
-  uint32_t pc_lower_bits = pc & (bht_entries - 1);  // pc masking with 17 1s
-  uint32_t ghistory_lower_bits = ghistory & (bht_entries - 1);  // ghistory masking with 17 1s
+  // this function returns the prediction result
+  uint32_t t0_entries = 1 << table_pcBits[0];         // t0_entries = 2^14
+  uint32_t pc_lower_bits = pc & (t0_entries - 1);     // pc masking with 14 1s
+  uint32_t ghistory_lower_bits = ghistory & (t0_entries - 1);  // ghistory masking with 17 1s
   uint32_t index = pc_lower_bits ^ ghistory_lower_bits;         // xoring pc lower bits and ghr lower bits for indexing
   
   switch (bht_gshare[index]) {  // looks at the bht entry to decide whether branch should be predicted taken or not taken
@@ -366,11 +377,11 @@ void train_tage(uint32_t pc, uint8_t outcome) {
 
 void cleanup_tage()
 {
-  free(t0_tage);
-  free(t1_tage);
-  free(t2_tage);
-  free(t3_tage);
-  free(t4_tage);
+  free(t0_table);
+  free(t1_table);
+  free(t2_table);
+  free(t3_table);
+  free(t4_table);
 }
 
 /*********************************************end of tage predictor functions **********************************************/
