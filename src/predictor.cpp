@@ -276,8 +276,7 @@ void train_tournament(uint32_t pc, uint8_t outcome) {
   pathHistory= ((pathHistory << 1) | outcome);        
 }
 
-void cleanup_tournament()
-{
+void cleanup_tournament(){
   free(lht_tournament);
   free(bht_tournament);
   free(ght_tournament);
@@ -326,22 +325,61 @@ void init_tage() {
 
 uint8_t tage_predict(uint32_t pc) {
   // this function returns the prediction result
-  uint32_t t0_entries = 1 << table_pcBits[0];         // t0_entries = 2^14
-  uint32_t pc_lower_bits = pc & (t0_entries - 1);     // pc masking with 14 1s
-  uint32_t ghistory_lower_bits = ghistory & (t0_entries - 1);  // ghistory masking with 17 1s
-  uint32_t index = pc_lower_bits ^ ghistory_lower_bits;         // xoring pc lower bits and ghr lower bits for indexing
-  
-  switch (bht_gshare[index]) {  // looks at the bht entry to decide whether branch should be predicted taken or not taken
-  case WN:
+
+  // indexing each table
+  uint32_t t0_pc_lower_bits = pc & (1 << table_pcBits[0] - 1);        // pc masking with 14 1s
+
+  uint32_t t1_pc_lower_bits = pc & ((1 << table_pcBits[1]) - 1);      // pc masking with 13 1s
+  uint32_t t1_ghr_lower_bits = ghr & ((1 << table_ghrBits[0]) - 1);   // ghr masking with 2 1s
+  uint32_t t1_index = t1_pc_lower_bits ^ t1_ghr_lower_bits;           // xoring pc lower bits and ghr lower bits for indexing t1
+
+  uint32_t t2_pc_lower_bits = pc & ((1 << table_pcBits[2]) - 1);      // pc masking with 12 1s
+  uint32_t t2_ghr_lower_bits = ghr & ((1 << table_ghrBits[1]) - 1);   // ghr masking with 4 1s
+  uint32_t t2_index = t2_pc_lower_bits ^ t2_ghr_lower_bits;           // xoring pc lower bits and ghr lower bits for indexing t1
+
+  uint32_t t3_pc_lower_bits = pc & ((1 << table_pcBits[3]) - 1);      // pc masking with 11 1s
+  uint32_t t3_ghr_lower_bits = ghr & ((1 << table_ghrBits[2]) - 1);   // ghr masking with 8 1s
+  uint32_t t3_index = t3_pc_lower_bits ^ t3_ghr_lower_bits;           // xoring pc lower bits and ghr lower bits for indexing t1
+
+  uint32_t t4_pc_lower_bits = pc & ((1 << table_pcBits[4]) - 1);      // pc masking with 10 1s
+  uint32_t t4_ghr_lower_bits = ghr & ((1 << table_ghrBits[3]) - 1);   // ghr masking with 16 1s
+  uint32_t t4_index = t1_pc_lower_bits ^ t4_ghr_lower_bits;           // xoring pc lower bits and ghr lower bits for indexing t1
+
+  // computing tag by hasing pc lower bits and ghr lower bits
+  uint32_t t1_tag = (t1_pc_lower_bits ^ (pc >> 5)) ^ t1_ghr_lower_bits;   
+  uint32_t t2_tag = (t2_pc_lower_bits ^ (pc >> 5)) ^ t2_ghr_lower_bits;
+  uint32_t t3_tag = (t3_pc_lower_bits ^ (pc >> 5)) ^ t3_ghr_lower_bits;
+  uint32_t t4_tag = (t4_pc_lower_bits ^ (pc >> 5)) ^ t4_ghr_lower_bits;
+
+  uint16_t t1_actual_tag = (t1_table[t1_index] >> 2) & ((1 << 8) - 1);    // extracting 8 tag bits [9:2] in t1 entry
+  uint16_t t2_actual_tag = (t2_table[t2_index] >> 2) & ((1 << 9) - 1);    // extracting 9 tag bits [10:2] in t1 entry
+  uint16_t t3_actual_tag = (t3_table[t3_index] >> 2) & ((1 << 10) - 1);   // extracting 10 tag bits [11:2] in t1 entry
+  uint16_t t4_actual_tag = (t4_table[t4_index] >> 2) & ((1 << 11) - 1);   // extracting 11 tag bits [12:2] in t1 entry
+
+  uint8_t t1_prediction = (t1_tag == t1_actual_tag) ? ((t1_table[t1_index] >> 10) & ((1 << 3) - 1)) : t0_table[t0_pc_lower_bits];   // if t1 tag match, use prediction result from t1. otherwise, use prediction result from t0
+  uint8_t t2_prediction = (t2_tag == t2_actual_tag) ? ((t2_table[t2_index] >> 11) & ((1 << 3) - 1)) : t1_prediction;                // if t2 tag match, use prediction result from t2. otherwise, go to lower table to look for prediction
+  uint8_t t3_prediction = (t3_tag == t3_actual_tag) ? ((t3_table[t3_index] >> 12) & ((1 << 3) - 1)) : t2_prediction;                // if t3 tag match, use prediction result from t3. otherwise, go to lower table to look for prediction
+  uint8_t t4_prediction = (t4_tag == t4_actual_tag) ? ((t4_table[t4_index] >> 13) & ((1 << 3) - 1)) : t3_prediction;                // if t4 tag match, use prediction result from t4. otherwise, go to lower table to look for prediction
+
+  switch (t4_prediction) {  // looks at the bht entry to decide whether branch should be predicted taken or not taken
+  case DNT:
     return NOTTAKEN;
-  case SN:
+  case LNT:
     return NOTTAKEN;
-  case WT:
+  case MNT:
+    return NOTTAKEN;
+  case BNT:
+    return NOTTAKEN;
+  case DT:
     return TAKEN;
-  case ST:
+  case LT:
+    return TAKEN;
+  case MT:
+    return TAKEN;
+  case BT:
     return TAKEN;
   default:
-    printf("Warning: Undefined state of entry in GSHARE BHT!\n");
+    printf("Warning: Undefined state of entry in tables!\n");
     return NOTTAKEN;
   }
 }

@@ -39,11 +39,15 @@ extern const char *bpName[];
 #define ST 3 // predict T, strong taken
 
 // Definistions for 3-bit counters
-#define VSN 0 // predict NT, strong not taken
-#define SN 1 // predict NT, weak not taken
-#define WT 2 // predict T, weak taken
-#define ST 3 // predict T, strong taken
+#define DNT 0 // predict NT, definitely not taken
+#define LNT 1 // predict NT, likely not taken
+#define MNT 2 // predict NT, moderately not taken
+#define BNT 3 // predict NT, barely not taken
 
+#define BT 4 // predict T, barely taken
+#define MT 5 // predict T, moderately taken
+#define LT 6 // predict T, likely taken
+#define DT 7 // predict T, definitely taken
 
 //------------------------------------//
 //      Predictor Configuration       //
